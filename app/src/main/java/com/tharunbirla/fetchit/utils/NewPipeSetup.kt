@@ -25,7 +25,7 @@ object NewPipeSetup {
                 .build()
             NewPipe.init(object : Downloader() {
                 override fun execute(request: Request): Response {
-                    val body = request.data()?.let {
+                    val body = request.dataToSend()?.let {
                         it.toRequestBody("application/octet-stream".toMediaTypeOrNull())
                     }
                     val builder = okhttp3.Request.Builder()
