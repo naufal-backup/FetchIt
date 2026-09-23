@@ -491,8 +491,10 @@ class MainActivity : AppCompatActivity() {
                             var bytesRead: Int
 
                             while (input.read(buffer).also { bytesRead = it } != -1) {
-                                // Dukung tombol batal
-                                kotlinx.coroutines.ensureActive()
+                                // Dukung tombol batal (coroutines 1.6: cek manual)
+                                if (coroutineContext[Job]?.isCancelled == true) {
+                                    throw CancellationException()
+                                }
                                 output.write(buffer, 0, bytesRead)
                                 downloadedBytes += bytesRead
 
