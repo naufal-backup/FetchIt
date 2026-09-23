@@ -15,55 +15,76 @@ object FacebookUrlFetcher {
         .followRedirects(true)
         .build()
 
+    private val headers = mapOf(
+        "sec-fetch-user" to "?1",
+        "sec-ch-ua-mobile" to "?0",
+        "sec-fetch-site" to "none",
+        "sec-fetch-dest" to "document",
+        "sec-fetch-mode" to "navigate",
+        "cache-control" to "max-age=0",
+        "upgrade-insecure-requests" to "1",
+        "accept-language" to "en-US,en;q=0.9",
+        "sec-ch-ua" to "\"Chromium\";v=\"120\", \"Not_A Brand\";v=\"24\"",
+        "user-agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36",
+        "accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+    ).toHeaders()
+
     fun fetchFacebookVideoUrl(videoUrl: String): String? {
-        val headers = mapOf(
-            "sec-fetch-user" to "?1",
-            "sec-ch-ua-mobile" to "?0",
-            "sec-fetch-site" to "none",
-            "sec-fetch-dest" to "document",
-            "sec-fetch-mode" to "navigate",
-            "cache-control" to "max-age=0",
-            "authority" to "www.facebook.com",
-            "upgrade-insecure-requests" to "1",
-            "accept-language" to "en-GB,en;q=0.9,tr-TR;q=0.8,tr;q=0.7,en-US;q=0.6",
-            "sec-ch-ua" to "\"Google Chrome\";v=\"89\", \"Chromium\";v=\"89\", \";Not A Brand\";v=\"99\"",
-            "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36",
-            "accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"
-        ).toHeaders()
+        // Coba beberapa varian host: www (asli), m, dan mbasic (sering tanpa login)
+        val candidates = linkedSetOf(videoUrl)
+        try {
+            val withHost = { host: String ->
+                videoUrl.replaceFirst(
+                    Regex("https?://(www|m|mbasic)\\.facebook\\.com"),
+                    "https://$host.facebook.com"
+                )
+            }
+            candidates.add(withHost("m"))
+            candidates.add(withHost("mbasic"))
+        } catch (_: Exception) { }
 
-        return try {
-            val request = Request.Builder()
-                .url(videoUrl)
-                .headers(headers)
-                .build()
+        var lastError: String? = null
+        for (url in candidates) {
+            try {
+                fetchFromPage(url)?.let { return it }
+            } catch (e: Exception) {
+                lastError = e.message
+                Log.d("Facebook", "varian gagal ($url): ${e.message}")
+            }
+        }
+        Log.e("Facebook", "Semua varian gagal. Terakhir: $lastError")
+        return null
+    }
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (body.isNullOrEmpty()) {
-                        Log.e("Facebook", "Empty response body")
-                        return null
-                    }
-                    return parseVideoDetailsFromHtml(body)
-                } else {
-                    Log.e("Facebook", "Error: HTTP ${response.code}, Message: ${response.message}")
+    private fun fetchFromPage(pageUrl: String): String? {
+        val request = Request.Builder()
+            .url(pageUrl)
+            .headers(headers)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) {
+                val body = response.body?.string()
+                if (body.isNullOrEmpty()) {
+                    Log.e("Facebook", "Empty response body")
                     return null
                 }
+                return parseVideoDetailsFromHtml(body)
+            } else {
+                Log.e("Facebook", "Error: HTTP ${response.code}, Message: ${response.message}")
+                return null
             }
-        } catch (e: Exception) {
-            Log.e("Facebook", "Error: ${e.message}", e)
-            null
         }
     }
 
     private fun parseVideoDetailsFromHtml(html: String): String? {
-        val title = extractTitle(html)
-        val sdLink = getSDLink(html)
-        val hdLink = getHDLink(html)
-
-        Log.d("Facebook", "Title: $title, SD Link: $sdLink, HD Link: $hdLink")
-
-        return hdLink ?: sdLink // Return HD link if available, otherwise SD link
+        // Urutan: HD native → playable HD → og:video → SD native → playable → redirect
+        getHDLink(html)?.let { return it }
+        getPlayableHdLink(html)?.let { return it }
+        getOgVideo(html)?.let { return it }
+        getSDLink(html)?.let { return it }
+        getPlayableLink(html)?.let { return it }
+        return getRedirectLink(html)
     }
 
     private fun extractTitle(html: String): String {
@@ -79,6 +100,34 @@ object FacebookUrlFetcher {
     private fun getHDLink(html: String): String? {
         val regex = """"browser_native_hd_url":"([^"]+)"""".toRegex()
         return regex.find(html)?.groups?.get(1)?.value?.let { cleanStr(it) }
+    }
+
+    private fun getPlayableHdLink(html: String): String? {
+        val regex = """"playable_url_quality_hd":"([^"]+)"""".toRegex()
+        return regex.find(html)?.groups?.get(1)?.value?.let { cleanStr(it) }
+    }
+
+    private fun getPlayableLink(html: String): String? {
+        val regex = """"playable_url":"([^"]+)"""".toRegex()
+        return regex.find(html)?.groups?.get(1)?.value?.let { cleanStr(it) }
+    }
+
+    private fun getOgVideo(html: String): String? {
+        val regex = """<meta[^>]+property="og:video(?::url)?"[^>]+content="([^"]+)"""".toRegex()
+        return regex.find(html)?.groups?.get(1)?.value
+            ?: """<meta[^>]+content="([^"]+)"[^>]+property="og:video(?::url)?"""".toRegex()
+                .find(html)?.groups?.get(1)?.value
+    }
+
+    /** Link /video_redirect/?src=... ala mbasic — decode URL-nya. */
+    private fun getRedirectLink(html: String): String? {
+        val regex = """/video_redirect/\?src=([^"&]+)""".toRegex()
+        val raw = regex.find(html)?.groups?.get(1)?.value ?: return null
+        return try {
+            java.net.URLDecoder.decode(raw, "UTF-8")
+        } catch (_: Exception) {
+            raw
+        }
     }
 
     private fun cleanStr(str: String): String {

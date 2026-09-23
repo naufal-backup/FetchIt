@@ -477,6 +477,10 @@ class MainActivity : AppCompatActivity() {
     private suspend fun downloadFile(videoUrl: String, uri: Uri): Boolean {
         // Reset download started flag at the beginning of each download
         isDownloadStarted = false
+        // Hoist Job keluar dari lambda `use` (coroutineContext tak tersedia di dalamnya)
+        val job = coroutineContext[Job]
+        // Reset download started flag at the beginning of each download
+        isDownloadStarted = false
 
         return try {
             val request = Request.Builder().url(videoUrl).build()
@@ -492,7 +496,7 @@ class MainActivity : AppCompatActivity() {
 
                             while (input.read(buffer).also { bytesRead = it } != -1) {
                                 // Dukung tombol batal (coroutines 1.6: cek manual)
-                                if (coroutineContext[Job]?.isCancelled == true) {
+                                if (job?.isCancelled == true) {
                                     throw CancellationException()
                                 }
                                 output.write(buffer, 0, bytesRead)
