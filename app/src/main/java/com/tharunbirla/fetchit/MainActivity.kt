@@ -460,16 +460,44 @@ class MainActivity : AppCompatActivity() {
             val myJob = coroutineContext[Job]
             try {
                 updateProgressUi(0, "Mengambil link video…")
-                val videoUrl = when {
-                    url.contains("youtube.com") || url.contains("youtu.be") -> YouTubeUrlFetcher.fetchYouTubeVideoUrl(url)
-                    url.contains("twitter.com") || url.contains("x.com") -> TwitterUrlFetcher.fetchTwitterVideoUrl(url)
-                    url.contains("instagram.com") -> InstagramUrlFetcher.fetchInstagramVideoUrl(url)
-                    url.contains("facebook.com") || url.contains("fb.watch") -> FacebookUrlFetcher.fetchFacebookVideoUrl(url)
-                    else -> DirectFileFetcher.fetchDirectMediaUrl(url)
-                } ?: DirectFileFetcher.fetchDirectMediaUrl(url)
+                withContext(Dispatchers.Main) {
+                    findViewById<TextView>(R.id.errorText)?.visibility = View.GONE
+                }
+                // Kumpulkan error tiap tahap agar user tahu persis yang gagal
+                val stageErrors = mutableListOf<String>()
+                fun <T> attempt(stage: String, block: () -> T?): T? {
+                    return try {
+                        block()
+                    } catch (e: Exception) {
+                        stageErrors.add("$stage: ${e.message?.take(150)}")
+                        Log.d("Fetch", "$stage gagal: ${e.message}")
+                        null
+                    }
+                }
+                var videoUrl: String? = null
+                when {
+                    url.contains("youtube.com") || url.contains("youtu.be") ->
+                        attempt("YouTube") { YouTubeUrlFetcher.fetchYouTubeVideoUrl(url) }
+                    url.contains("twitter.com") || url.contains("x.com") ->
+                        attempt("Twitter") { TwitterUrlFetcher.fetchTwitterVideoUrl(url) }
+                    url.contains("instagram.com") ->
+                        attempt("Instagram") { InstagramUrlFetcher.fetchInstagramVideoUrl(url) }
+                    url.contains("facebook.com") || url.contains("fb.watch") ->
+                        attempt("Facebook") { FacebookUrlFetcher.fetchFacebookVideoUrl(url) }
+                    else ->
+                        attempt("Direct") { DirectFileFetcher.fetchDirectMediaUrl(url) }
+                }?.let { videoUrl = it }
 
                 if (videoUrl == null) {
-                    finishDownload(fileName, platform, false, "Link tidak dikenali")
+                    // Fallback terakhir: coba sebagai link file langsung
+                    attempt("Direct") { DirectFileFetcher.fetchDirectMediaUrl(url) }
+                        ?.let { videoUrl = it }
+                }
+
+                if (videoUrl == null) {
+                    val reason = if (stageErrors.isEmpty()) "Link tidak dikenali"
+                        else "Gagal retrieve — " + stageErrors.joinToString(" | ")
+                    finishDownload(fileName, platform, false, reason)
                     return@launch
                 }
                 val success = downloadFile(videoUrl, uri, myJob)
@@ -495,6 +523,12 @@ class MainActivity : AppCompatActivity() {
         DownloadHistory.add(this, HistoryEntry(fileName, platform, DownloadHistory.now(), success))
         withContext(Dispatchers.Main) {
             showProgressCard(false)
+            if (!success) {
+                findViewById<TextView>(R.id.errorText)?.apply {
+                    text = message
+                    visibility = View.VISIBLE
+                }
+            }
             findViewById<TextInputEditText>(R.id.urlInput).text?.clear()
             findViewById<TextInputEditText>(R.id.fileNameInput).setText(generateFileName())
             showNotification(

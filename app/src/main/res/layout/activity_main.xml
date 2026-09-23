@@ -76,6 +76,15 @@
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
+                    <TextView
+                        android:id="@+id/errorText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone"
+                        android:textColor="?attr/colorError"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

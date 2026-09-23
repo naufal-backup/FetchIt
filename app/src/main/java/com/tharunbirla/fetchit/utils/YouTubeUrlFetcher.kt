@@ -20,13 +20,7 @@ object YouTubeUrlFetcher {
 
     fun fetchYouTubeVideoUrl(videoUrl: String): String? {
         // 1) NewPipeExtractor (library maintained — paling andal)
-        try {
-            NewPipeSetup.ensure()
-            val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
-            pickProgressiveMp4(info.videoStreams)?.let { return it }
-        } catch (e: Exception) {
-            Log.d("YouTube", "NewPipe gagal: ${e.message}")
-        }
+        fetchViaNewPipe(videoUrl)?.let { return it }
         // 2) Cobalt (multi-instance)
         try {
             CobaltApi.resolve(videoUrl)?.let { return it }
@@ -48,6 +42,13 @@ object YouTubeUrlFetcher {
             Log.e("YouTube", "Error: ${e.message}", e)
             null
         }
+    }
+
+    /** Jalur NewPipe saja (exception diteruskan agar pemanggil bisa mencatat tahapnya). */
+    fun fetchViaNewPipe(videoUrl: String): String? {
+        NewPipeSetup.ensure()
+        val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+        return pickProgressiveMp4(info.videoStreams)
     }
 
     /** Pilih mp4 progresif (ada audio) terbaik: 720p > 480p > 360p > lainnya. */
