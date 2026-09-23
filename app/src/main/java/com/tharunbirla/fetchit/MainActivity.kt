@@ -11,13 +11,18 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.util.Patterns
+import android.view.View
 import android.webkit.URLUtil
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -25,14 +30,20 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
+import com.tharunbirla.fetchit.utils.DirectFileFetcher
+import com.tharunbirla.fetchit.utils.DownloadHistory
 import com.tharunbirla.fetchit.utils.FacebookUrlFetcher
+import com.tharunbirla.fetchit.utils.HistoryEntry
 import com.tharunbirla.fetchit.utils.InstagramUrlFetcher
 import com.tharunbirla.fetchit.utils.TwitterUrlFetcher
 import com.tharunbirla.fetchit.utils.YouTubeUrlFetcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -50,17 +61,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var requestPermissionsLauncher: ActivityResultLauncher<Array<String>>
     private val channelId = "download_channel"
     private lateinit var saveLocationLauncher: ActivityResultLauncher<Intent>
+    private var downloadJob: Job? = null
+    private var pendingFileName: String = ""
+    private var lastProgressShown = -1
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            setupPermissions()
+        registerPermissionLauncher()
+        if (!arePermissionsGranted()) {
+            showPermissionRequestDialog()
         }
         setupUI()
+        refreshHistory()
         handleIncomingIntent(intent)
     }
 
@@ -141,26 +156,17 @@ class MainActivity : AppCompatActivity() {
             .toList()
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun setupPermissions() {
-        requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            val allGranted = permissions.values.all { it }
-            if (allGranted) {
-                showToast("All permissions granted")
-                // Enable download functionality
-                findViewById<MaterialButton>(R.id.downloadButton).isEnabled = true
-            } else {
-                handleDeniedPermissions(permissions)
+    /** Daftarkan permission launcher di semua API level (dipanggil dari onCreate). */
+    private fun registerPermissionLauncher() {
+        requestPermissionsLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+                val allGranted = permissions.values.all { it }
+                if (allGranted) {
+                    showToast("All permissions granted")
+                } else {
+                    handleDeniedPermissions(permissions)
+                }
             }
-        }
-
-        // Check permissions on startup
-        if (!arePermissionsGranted()) {
-            showPermissionRequestDialog()
-        } else {
-            // Enable download functionality if permissions are already granted
-            findViewById<MaterialButton>(R.id.downloadButton).isEnabled = true
-        }
     }
 
     private fun handleDeniedPermissions(permissions: Map<String, Boolean>) {
@@ -171,7 +177,7 @@ class MainActivity : AppCompatActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     !shouldShowRequestPermissionRationale(permission)
                 } else {
-                    TODO("VERSION.SDK_INT < M")
+                    false
                 }
             }
 
@@ -180,9 +186,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 showPermissionExplanationDialog(deniedPermissions.toTypedArray())
             }
-
-            // Disable download functionality
-            findViewById<MaterialButton>(R.id.downloadButton).isEnabled = false
         }
     }
 
@@ -237,6 +240,10 @@ class MainActivity : AppCompatActivity() {
         val urlInput = findViewById<TextInputEditText>(R.id.urlInput)
         val downloadButton = this.findViewById<MaterialButton>(R.id.downloadButton)
         val copyActionButton = findViewById<FloatingActionButton>(R.id.copyButton)
+        val fileNameInput = findViewById<TextInputEditText>(R.id.fileNameInput)
+        val detectText = findViewById<TextView>(R.id.detectText)
+        val cancelButton = findViewById<MaterialButton>(R.id.cancelButton)
+        val clearHistoryButton = findViewById<MaterialButton>(R.id.clearHistoryButton)
 
         saveLocationLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
@@ -244,13 +251,39 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        downloadButton.setOnClickListener {
-            val url = urlInput.text.toString()
-            if (url.isNotEmpty()) {
-                openFilePicker()
-            } else {
-                showToast("Please enter a valid URL")
+        // Deteksi platform otomatis saat mengetik
+        urlInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                updatePlatformUi(s?.toString().orEmpty(), detectText)
             }
+        })
+
+        downloadButton.setOnClickListener {
+            val url = urlInput.text.toString().trim()
+            if (url.isEmpty()) {
+                showToast("Tempel link video dulu")
+                return@setOnClickListener
+            }
+            if (!isValidUrl(url)) {
+                showToast("Link tidak valid")
+                return@setOnClickListener
+            }
+            pendingFileName = fileNameInput.text.toString().trim()
+                .ifEmpty { generateFileName() }
+                .let { if (it.endsWith(".mp4", true)) it else "$it.mp4" }
+            openFilePicker()
+        }
+
+        cancelButton.setOnClickListener {
+            downloadJob?.cancel()
+            showToast("Unduhan dibatalkan")
+        }
+
+        clearHistoryButton.setOnClickListener {
+            DownloadHistory.clear(this)
+            refreshHistory()
         }
 
         copyActionButton.setOnClickListener {
@@ -258,24 +291,64 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    /** Platform yang didukung + label ramah untuk UI. */
+    private fun detectPlatform(url: String): String? {
+        val u = url.lowercase()
+        return when {
+            "youtube.com" in u || "youtu.be" in u -> "YouTube"
+            "twitter.com" in u || "x.com" in u -> "Twitter/X"
+            "instagram.com" in u -> "Instagram"
+            "facebook.com" in u || "fb.watch" in u -> "Facebook"
+            "tiktok.com" in u -> "TikTok"
+            "reddit.com" in u || "redd.it" in u -> "Reddit"
+            else -> null
+        }
+    }
+
+    private fun updatePlatformUi(url: String, detectText: TextView) {
+        if (url.isBlank()) {
+            detectText.text = getString(R.string.detect_hint_idle)
+            highlightChip(null)
+            return
+        }
+        val platform = detectPlatform(url)
+        if (platform != null) {
+            detectText.text = getString(R.string.detect_found, platform)
+            highlightChip(platform)
+        } else if (isValidUrl(url)) {
+            detectText.text = getString(R.string.detect_direct_try)
+            highlightChip(null)
+        } else {
+            detectText.text = getString(R.string.detect_invalid)
+            highlightChip(null)
+        }
+    }
+
+    private fun highlightChip(platform: String?) {
+        val map = mapOf(
+            "YouTube" to R.id.chipYoutube,
+            "Twitter/X" to R.id.chipTwitter,
+            "Instagram" to R.id.chipInstagram,
+            "Facebook" to R.id.chipFacebook,
+            "TikTok" to R.id.chipTiktok,
+            "Reddit" to R.id.chipReddit
+        )
+        map.forEach { (name, id) ->
+            findViewById<Chip>(id)?.isChecked = (name == platform)
+        }
+    }
+
     private fun arePermissionsGranted(): Boolean {
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                checkPermissions(
-                    Manifest.permission.POST_NOTIFICATIONS
-                )
+                checkPermissions(Manifest.permission.POST_NOTIFICATIONS)
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
-                // For Android 10 (Q) and above, we don't need WRITE_EXTERNAL_STORAGE
-                checkPermissions(
-                    Manifest.permission.POST_NOTIFICATIONS
-                )
+                // Android 10+ pakai MediaStore/SAF — tanpa storage permission
+                true
             }
             else -> {
-                checkPermissions(
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
+                checkPermissions(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
     }
@@ -298,34 +371,44 @@ class MainActivity : AppCompatActivity() {
     private fun requestPermissions() {
         val permissions = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                arrayOf(
-                    Manifest.permission.POST_NOTIFICATIONS
-                )
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS)
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
-                TODO("VERSION.SDK_INT < TIRAMISU")
+                // Tidak ada permission tambahan yang dibutuhkan
+                showToast("Siap mengunduh")
+                return
             }
             else -> {
-                arrayOf(
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
-        requestPermissionsLauncher.launch(permissions)
+        if (::requestPermissionsLauncher.isInitialized) {
+            requestPermissionsLauncher.launch(permissions)
+        }
     }
 
     private fun pasteClipboardToInput() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.let { pastedText ->
-            findViewById<TextInputEditText>(R.id.urlInput).setText(pastedText)
+        val clip = clipboard.primaryClip
+        if (clip == null || clip.itemCount == 0) {
+            showToast("Clipboard kosong")
+            return
         }
+        val pastedText = clip.getItemAt(0)?.text?.toString().orEmpty()
+        val urls = extractUrls(pastedText)
+        if (urls.isEmpty()) {
+            showToast("Tidak ada link di clipboard")
+            return
+        }
+        findViewById<TextInputEditText>(R.id.urlInput).setText(urls.first())
+        showToast("Link ditempel: ${detectPlatform(urls.first()) ?: "langsung"}")
     }
 
     private fun openFilePicker() {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "video/mp4"
-            putExtra(Intent.EXTRA_TITLE, generateFileName())
+            putExtra(Intent.EXTRA_TITLE, pendingFileName.ifEmpty { generateFileName() })
         }
         saveLocationLauncher.launch(intent)
     }
@@ -336,41 +419,62 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startDownload(uri: Uri) {
-        val url = findViewById<TextInputEditText>(R.id.urlInput).text.toString()
+        val url = findViewById<TextInputEditText>(R.id.urlInput).text.toString().trim()
+        val platform = detectPlatform(url) ?: "Langsung"
+        val fileName = pendingFileName.ifEmpty { generateFileName() }
+        showProgressCard(true, fileName)
+        lastProgressShown = -1
 
-        CoroutineScope(Dispatchers.IO).launch {
+        downloadJob?.cancel()
+        downloadJob = CoroutineScope(Dispatchers.IO).launch {
             try {
+                updateProgressUi(0, "Mengambil link video…")
                 val videoUrl = when {
                     url.contains("youtube.com") || url.contains("youtu.be") -> YouTubeUrlFetcher.fetchYouTubeVideoUrl(url)
-                    url.contains("twitter.com") -> TwitterUrlFetcher.fetchTwitterVideoUrl(url)
+                    url.contains("twitter.com") || url.contains("x.com") -> TwitterUrlFetcher.fetchTwitterVideoUrl(url)
                     url.contains("instagram.com") -> InstagramUrlFetcher.fetchInstagramVideoUrl(url)
-                    url.contains("facebook.com") -> FacebookUrlFetcher.fetchFacebookVideoUrl(url)
-                    else -> YouTubeUrlFetcher.fetchYouTubeVideoUrl(url)
-                }
+                    url.contains("facebook.com") || url.contains("fb.watch") -> FacebookUrlFetcher.fetchFacebookVideoUrl(url)
+                    else -> DirectFileFetcher.fetchDirectMediaUrl(url)
+                } ?: DirectFileFetcher.fetchDirectMediaUrl(url)
 
-                videoUrl?.let { downloadUrl ->
-                    val success = downloadFile(downloadUrl, uri)
-                    withContext(Dispatchers.Main) {
-                        if (success) {
-                            showNotification("Download Complete", "Video has been saved successfully")
-                            findViewById<TextInputEditText>(R.id.urlInput).text?.clear()
-                        } else {
-                            showNotification("Download Failed", "Unable to download the video")
-                        }
-                    }
-                } ?: withContext(Dispatchers.Main) {
-                    showNotification("Error", "Could not retrieve video URL")
+                if (videoUrl == null) {
+                    finishDownload(fileName, platform, false, "Link tidak dikenali")
+                    return@launch
+                }
+                val success = downloadFile(videoUrl, uri)
+                finishDownload(
+                    fileName, platform, success,
+                    if (success) "Video tersimpan" else "Unduhan gagal"
+                )
+            } catch (e: CancellationException) {
+                cancelProgressNotification()
+                withContext(Dispatchers.Main) {
+                    showProgressCard(false)
+                    showToast("Unduhan dibatalkan")
+                    refreshHistory()
                 }
             } catch (e: Exception) {
                 Log.e("Download", "Error: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    showNotification("Error", "Download failed: ${e.message}")
-                }
+                finishDownload(fileName, platform, false, "Error: ${e.message}")
             }
         }
     }
 
-    private fun downloadFile(videoUrl: String, uri: Uri): Boolean {
+    private suspend fun finishDownload(fileName: String, platform: String, success: Boolean, message: String) {
+        DownloadHistory.add(this, HistoryEntry(fileName, platform, DownloadHistory.now(), success))
+        withContext(Dispatchers.Main) {
+            showProgressCard(false)
+            findViewById<TextInputEditText>(R.id.urlInput).text?.clear()
+            findViewById<TextInputEditText>(R.id.fileNameInput).setText(generateFileName())
+            showNotification(
+                if (success) "Download Complete" else "Download Gagal",
+                message
+            )
+            refreshHistory()
+        }
+    }
+
+    private suspend fun downloadFile(videoUrl: String, uri: Uri): Boolean {
         // Reset download started flag at the beginning of each download
         isDownloadStarted = false
 
@@ -383,10 +487,12 @@ class MainActivity : AppCompatActivity() {
 
                     response.body.byteStream().use { input ->
                         contentResolver.openOutputStream(uri)?.use { output ->
-                            val buffer = ByteArray(4096)
+                            val buffer = ByteArray(32 * 1024)
                             var bytesRead: Int
 
                             while (input.read(buffer).also { bytesRead = it } != -1) {
+                                // Dukung tombol batal
+                                kotlinx.coroutines.ensureActive()
                                 output.write(buffer, 0, bytesRead)
                                 downloadedBytes += bytesRead
 
@@ -397,9 +503,11 @@ class MainActivity : AppCompatActivity() {
                                     0
                                 }
 
-                                // Throttle notification updates to prevent excessive system load
-                                if (progress % 5 == 0) {
+                                // Update notifikasi + UI dalam app (throttle per 2%)
+                                if (progress != lastProgressShown && (progress % 2 == 0 || progress == 100)) {
+                                    lastProgressShown = progress
                                     showProgressNotification(progress, totalBytes)
+                                    updateProgressUi(progress, "${formatFileSize(downloadedBytes)} / ${formatFileSize(totalBytes)}")
                                 }
                             }
                         }
@@ -416,12 +524,50 @@ class MainActivity : AppCompatActivity() {
                     false
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("Download", "Error: ${e.message}", e)
             // Remove progress notification and show error notification
             cancelProgressNotification()
             showCompletionNotification("Download Error", "Download failed: ${e.message}", false)
             false
+        }
+    }
+
+    private fun showProgressCard(show: Boolean, fileName: String = "") {
+        runOnUiThread {
+            findViewById<View>(R.id.progressCard).visibility = if (show) View.VISIBLE else View.GONE
+            if (show) {
+                findViewById<TextView>(R.id.progressFileName).text = fileName
+                findViewById<ProgressBar>(R.id.progressBar).progress = 0
+                findViewById<TextView>(R.id.progressText).text = "Menyiapkan…"
+            }
+        }
+    }
+
+    private suspend fun updateProgressUi(progress: Int, detail: String) {
+        withContext(Dispatchers.Main) {
+            findViewById<ProgressBar>(R.id.progressBar)?.progress = progress.coerceIn(0, 100)
+            findViewById<TextView>(R.id.progressText)?.text = "$progress% • $detail"
+        }
+    }
+
+    private fun refreshHistory() {
+        val container = findViewById<LinearLayout>(R.id.historyContainer) ?: return
+        val emptyText = findViewById<TextView>(R.id.historyEmptyText)
+        container.removeAllViews()
+        val entries = DownloadHistory.list(this)
+        emptyText?.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+        findViewById<MaterialButton>(R.id.clearHistoryButton)?.visibility =
+            if (entries.isEmpty()) View.GONE else View.VISIBLE
+        entries.take(8).forEach { e ->
+            val row = TextView(this).apply {
+                text = "${if (e.success) "✅" else "❌"} ${e.name} • ${e.platform} • ${e.date}"
+                textSize = 13f
+                setPadding(0, 8, 0, 8)
+            }
+            container.addView(row)
         }
     }
 

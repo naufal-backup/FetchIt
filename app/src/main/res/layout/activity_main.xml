@@ -67,6 +67,31 @@
                             android:textColor="?attr/colorOnSurface" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <TextView
+                        android:id="@+id/detectText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/detect_hint_idle"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/file_name"
+                        app:endIconMode="clear_text"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/fileNameInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:textColor="?attr/colorOnSurface" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/downloadButton"
                         android:layout_width="match_parent"
@@ -76,6 +101,56 @@
                         app:icon="@drawable/ic_download_24"
                         app:iconGravity="textStart"
                         style="@style/Widget.App.Button" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/progressCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:visibility="gone"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                style="@style/Widget.Material3.CardView.Elevated">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/progressFileName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+
+                    <ProgressBar
+                        android:id="@+id/progressBar"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="100"
+                        android:progress="0" />
+
+                    <TextView
+                        android:id="@+id/progressText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/cancelButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/cancel"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -96,41 +171,110 @@
                 android:gravity="center">
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipYoutube"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/youtube"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_youtube"/>
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTwitter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/twitter"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_twitter"/>
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipInstagram"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/instagram"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_instagram"/>
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFacebook"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/facebook"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_facebook"/>
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTiktok"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/tiktok"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_tiktok"/>
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipReddit"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/reddit"
+                    android:checkable="true"
+                    android:clickable="false"
+                    android:focusable="false"
                     app:chipIcon="@drawable/ic_reddit"/>
             </com.google.android.material.chip.ChipGroup>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                style="@style/Widget.Material3.CardView.Elevated">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/history"
+                        android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                    <TextView
+                        android:id="@+id/historyEmptyText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/history_empty"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <LinearLayout
+                        android:id="@+id/historyContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/clearHistoryButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/clear_history"
+                        android:visibility="gone"
+                        style="@style/Widget.Material3.Button.TextButton" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

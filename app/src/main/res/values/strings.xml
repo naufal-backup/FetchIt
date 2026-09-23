@@ -11,4 +11,13 @@
     <string name="youtube">YouTube</string>
     <string name="tiktok">TikTok</string>
     <string name="reddit">Reddit</string>
+    <string name="file_name">Nama file</string>
+    <string name="cancel">Batal</string>
+    <string name="history">Riwayat Unduhan</string>
+    <string name="history_empty">Belum ada unduhan.</string>
+    <string name="clear_history">Hapus riwayat</string>
+    <string name="detect_hint_idle">Tempel link video dari platform di bawah</string>
+    <string name="detect_found">Terdeteksi: %1$s ✓</string>
+    <string name="detect_direct_try">Link langsung — dicoba unduh langsung</string>
+    <string name="detect_invalid">Link belum valid</string>
 </resources>
