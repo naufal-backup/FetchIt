@@ -494,13 +494,14 @@ class MainActivity : AppCompatActivity() {
                         ?.let { videoUrl = it }
                 }
 
-                if (videoUrl == null) {
+                val finalUrl = videoUrl
+                if (finalUrl == null) {
                     val reason = if (stageErrors.isEmpty()) "Link tidak dikenali"
                         else "Gagal retrieve — " + stageErrors.joinToString(" | ")
                     finishDownload(fileName, platform, false, reason)
                     return@launch
                 }
-                val success = downloadFile(videoUrl, uri, myJob)
+                val success = downloadFile(finalUrl, uri, myJob)
                 finishDownload(
                     fileName, platform, success,
                     if (success) "Video tersimpan" else "Unduhan gagal"
