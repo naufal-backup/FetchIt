@@ -4,6 +4,10 @@ import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.MediaFormat
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.VideoStream
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
@@ -15,7 +19,15 @@ object YouTubeUrlFetcher {
         .build()
 
     fun fetchYouTubeVideoUrl(videoUrl: String): String? {
-        // 1) Cobalt (multi-instance)
+        // 1) NewPipeExtractor (library maintained — paling andal)
+        try {
+            NewPipeSetup.ensure()
+            val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+            pickProgressiveMp4(info.videoStreams)?.let { return it }
+        } catch (e: Exception) {
+            Log.d("YouTube", "NewPipe gagal: ${e.message}")
+        }
+        // 2) Cobalt (multi-instance)
         try {
             CobaltApi.resolve(videoUrl)?.let { return it }
         } catch (e: Exception) {
@@ -38,8 +50,20 @@ object YouTubeUrlFetcher {
         }
     }
 
-    fun extractVideoId(url: String): String? {
-        return try {
+    /** Pilih mp4 progresif (ada audio) terbaik: 720p > 480p > 360p > lainnya. */
+    private fun pickProgressiveMp4(streams: List<VideoStream>): String? {
+        val mp4 = streams.filter {
+            !it.isVideoOnly && it.format == MediaFormat.MPEG_4 && it.content.startsWith("http")
+        }
+        if (mp4.isEmpty()) return null
+        val rank = listOf("720p", "HD", "480p", "360p", "240p", "144p")
+        return mp4.minByOrNull { s ->
+            val i = rank.indexOfFirst { s.resolution.contains(it, true) }
+            if (i < 0) 99 else i
+        }?.content
+    }
+
+    fun extractVideoId(url: String): String? {        return try {
             val patterns = listOf(
                 """[?&]v=([\w-]{11})""".toRegex(),
                 """youtu\.be/([\w-]{11})""".toRegex(),

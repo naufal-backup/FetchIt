@@ -38,6 +38,7 @@ import com.tharunbirla.fetchit.utils.DownloadHistory
 import com.tharunbirla.fetchit.utils.FacebookUrlFetcher
 import com.tharunbirla.fetchit.utils.HistoryEntry
 import com.tharunbirla.fetchit.utils.InstagramUrlFetcher
+import com.tharunbirla.fetchit.utils.ThemeHelper
 import com.tharunbirla.fetchit.utils.TwitterUrlFetcher
 import com.tharunbirla.fetchit.utils.YouTubeUrlFetcher
 import kotlinx.coroutines.CancellationException
@@ -66,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var lastProgressShown = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeHelper.applySaved(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -237,6 +239,17 @@ class MainActivity : AppCompatActivity() {
         val backgroundColor = ContextCompat.getColor(this, R.color.background)
         window.statusBarColor = backgroundColor
 
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        toolbar.inflateMenu(R.menu.main_menu)
+        toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_theme) {
+                showThemeDialog()
+                true
+            } else {
+                false
+            }
+        }
+
         val urlInput = findViewById<TextInputEditText>(R.id.urlInput)
         val downloadButton = this.findViewById<MaterialButton>(R.id.downloadButton)
         val copyActionButton = findViewById<FloatingActionButton>(R.id.copyButton)
@@ -289,6 +302,22 @@ class MainActivity : AppCompatActivity() {
         copyActionButton.setOnClickListener {
             pasteClipboardToInput()
         }
+    }
+
+    private fun showThemeDialog() {
+        val labels = arrayOf(
+            getString(R.string.theme_system),
+            getString(R.string.theme_light),
+            getString(R.string.theme_dark)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.theme_title)
+            .setSingleChoiceItems(labels, ThemeHelper.getSaved(this)) { dialog, which ->
+                ThemeHelper.save(this, which)
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** Platform yang didukung + label ramah untuk UI. */
