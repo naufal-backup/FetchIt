@@ -41,14 +41,15 @@ object CobaltApi {
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
                     .build()
                 client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) continue
-                    val json = JSONObject(resp.body?.string().orEmpty())
-                    val status = json.optString("status")
-                    if (status == "tunnel" || status == "redirect") {
-                        val direct = json.optString("url")
-                        if (direct.isNotEmpty()) return direct
-                    } else if (status.isNotEmpty()) {
-                        Log.d("Cobalt", "$base -> $status")
+                    if (resp.isSuccessful) {
+                        val json = JSONObject(resp.body?.string().orEmpty())
+                        val status = json.optString("status")
+                        if (status == "tunnel" || status == "redirect") {
+                            val direct = json.optString("url")
+                            if (direct.isNotEmpty()) return direct
+                        } else if (status.isNotEmpty()) {
+                            Log.d("Cobalt", "$base -> $status")
+                        }
                     }
                 }
             } catch (e: Exception) {

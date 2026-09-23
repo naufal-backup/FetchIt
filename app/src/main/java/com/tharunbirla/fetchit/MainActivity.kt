@@ -427,6 +427,8 @@ class MainActivity : AppCompatActivity() {
 
         downloadJob?.cancel()
         downloadJob = CoroutineScope(Dispatchers.IO).launch {
+            // Tangkap Job sendiri (di dalam lambda `use` nanti tak tersedia)
+            val myJob = coroutineContext[Job]
             try {
                 updateProgressUi(0, "Mengambil link video…")
                 val videoUrl = when {
@@ -441,7 +443,7 @@ class MainActivity : AppCompatActivity() {
                     finishDownload(fileName, platform, false, "Link tidak dikenali")
                     return@launch
                 }
-                val success = downloadFile(videoUrl, uri)
+                val success = downloadFile(videoUrl, uri, myJob)
                 finishDownload(
                     fileName, platform, success,
                     if (success) "Video tersimpan" else "Unduhan gagal"
@@ -474,11 +476,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun downloadFile(videoUrl: String, uri: Uri): Boolean {
-        // Reset download started flag at the beginning of each download
-        isDownloadStarted = false
-        // Hoist Job keluar dari lambda `use` (coroutineContext tak tersedia di dalamnya)
-        val job = coroutineContext[Job]
+    private suspend fun downloadFile(videoUrl: String, uri: Uri, myJob: Job?): Boolean {
         // Reset download started flag at the beginning of each download
         isDownloadStarted = false
 
@@ -496,7 +494,7 @@ class MainActivity : AppCompatActivity() {
 
                             while (input.read(buffer).also { bytesRead = it } != -1) {
                                 // Dukung tombol batal (coroutines 1.6: cek manual)
-                                if (job?.isCancelled == true) {
+                                if (myJob?.isCancelled == true) {
                                     throw CancellationException()
                                 }
                                 output.write(buffer, 0, bytesRead)
